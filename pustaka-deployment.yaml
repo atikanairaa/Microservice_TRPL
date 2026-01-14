@@ -1,0 +1,294 @@
+# ===================================================================
+# == DATABASE (STATEFUL)
+# ===================================================================
+# Service for MongoDB (Headless, for the StatefulSet)
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-service
+spec:
+  ports:
+  - port: 27017
+  clusterIP: None # This makes it a "headless" service
+  selector:
+    app: mongodb
+---
+# StatefulSet for MongoDB to handle persistent data
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb-statefulset
+spec:
+  serviceName: "mongodb-service"
+  replicas: 0
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      containers:
+      - name: mongodb
+        image: mongo:latest # Public image
+        ports:
+        - containerPort: 27017
+        env:
+        - name: MONGO_INITDB_ROOT_USERNAME
+          value: "admin"
+        - name: MONGO_INITDB_ROOT_PASSWORD
+          value: "password"
+        volumeMounts:
+        - name: mongodb-persistent-storage
+          mountPath: /data/db
+  volumeClaimTemplates:
+  - metadata:
+      name: mongodb-persistent-storage
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 1Gi # Request 1 Gigabyte of storage
+
+# ===================================================================
+# == INFRASTRUCTURE
+# ===================================================================
+# Eureka Server Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eureka-server-deployment
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: eureka-server
+  template:
+    metadata:
+      labels:
+        app: eureka-server
+    spec:
+      containers:
+      - name: eureka-server-container
+        image: server-eureka:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8761
+---
+# Eureka Server Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: eureka-server-service
+spec:
+  selector:
+    app: eureka-server
+  ports:
+  - port: 8761
+    targetPort: 8761
+---
+# RabbitMQ Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq-deployment
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+    spec:
+      containers:
+      - name: rabbitmq-container
+        image: rabbitmq:3-management-alpine # Public image
+        ports:
+        - containerPort: 5672
+        - containerPort: 15672
+---
+# RabbitMQ Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq-service
+spec:
+  selector:
+    app: rabbitmq
+  ports:
+  - name: amqp
+    port: 5672
+    targetPort: 5672
+  - name: management
+    port: 15672
+    targetPort: 15672
+
+# ===================================================================
+# == APPLICATION SERVICES
+# ===================================================================
+# Anggota Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: anggota-service-deployment
+spec:
+  replicas: 0
+  selector: { matchLabels: { app: anggota-service } }
+  template:
+    metadata: { labels: { app: anggota-service } }
+    spec:
+      containers:
+      - name: anggota-service-container
+        image: anggota-service:latest
+        imagePullPolicy: Never
+        env:
+        - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
+          value: http://eureka-server-service:8761/eureka/
+---
+# Anggota Service Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: anggota-service
+spec:
+  selector: { app: anggota-service }
+  ports:
+  - port: 80 # The internal port can be 80, it will forward to your app's port
+    targetPort: 8080 # Assuming your app runs on 8080, change if needed
+---
+# Buku Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: buku-service-deployment
+spec:
+  replicas: 0
+  selector: { matchLabels: { app: buku-service } }
+  template:
+    metadata: { labels: { app: buku-service } }
+    spec:
+      containers:
+      - name: buku-service-container
+        image: buku-service:latest
+        imagePullPolicy: Never
+        env:
+        - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
+          value: http://eureka-server-service:8761/eureka/
+---
+# Buku Service Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: buku-service
+spec:
+  selector: { app: buku-service }
+  ports:
+  - port: 80
+    targetPort: 8080 # Assuming your app runs on 8080, change if needed
+---
+# Peminjaman Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: peminjaman-service-deployment
+spec:
+  replicas: 0
+  selector: { matchLabels: { app: peminjaman-service } }
+  template:
+    metadata: { labels: { app: peminjaman-service } }
+    spec:
+      containers:
+      - name: peminjaman-service-container
+        image: peminjaman-service:latest
+        imagePullPolicy: Never
+        env:
+        - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
+          value: http://eureka-server-service:8761/eureka/
+        - name: SPRING_RABBITMQ_HOST
+          value: "rabbitmq-service"
+        - name: SPRING_DATA_MONGODB_URI
+          value: "mongodb://admin:password@mongodb-service:27017/pustaka_read_db?authSource=admin"
+        - name: SPRING_MAIL_USERNAME
+          value: "email-anda@gmail.com" # <-- Ganti
+        - name: SPRING_MAIL_PASSWORD
+          value: "password-app-anda" # <-- Ganti (Consider using K8s Secrets for this!)
+---
+# Peminjaman Service Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: peminjaman-service
+spec:
+  selector: { app: peminjaman-service }
+  ports:
+  - port: 80
+    targetPort: 8080 # Assuming your app runs on 8080, change if needed
+---
+# Pengembalian Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pengembalian-service-deployment
+spec:
+  replicas: 0
+  selector: { matchLabels: { app: pengembalian-service } }
+  template:
+    metadata: { labels: { app: pengembalian-service } }
+    spec:
+      containers:
+      - name: pengembalian-service-container
+        image: pengembalian-service:latest
+        imagePullPolicy: Never
+        env:
+        - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
+          value: http://eureka-server-service:8761/eureka/
+---
+# Pengembalian Service Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: pengembalian-service
+spec:
+  selector: { app: pengembalian-service }
+  ports:
+  - port: 80
+    targetPort: 8080 # Assuming your app runs on 8080, change if needed
+---
+# API Gateway Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway-deployment
+spec:
+  replicas: 0
+  selector: { matchLabels: { app: api-gateway } }
+  template:
+    metadata: { labels: { app: api-gateway } }
+    spec:
+      containers:
+      - name: api-gateway-container
+        image: api-gateway:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 9001 # Correct port from compose file
+        env:
+        - name: SERVER_PORT
+          value: "9001"
+        - name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
+          value: http://eureka-server-service:8761/eureka/
+---
+# API Gateway Service (External Access)
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway-service
+spec:
+  type: LoadBalancer # Docker Desktop makes this available on localhost
+  selector:
+    app: api-gateway
+  ports:
+  - port: 9001       # External port
+    targetPort: 9001 # Internal container port
