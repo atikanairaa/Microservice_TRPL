@@ -37,7 +37,7 @@ public class AnggotaController {
 
     @GetMapping("/")
     public List<Anggota> findAll() {
-        log.info("Mengambil semua data anggota"); // Log GET All
+        log.info("Mengambil semua data anggota yang tersedia"); // Log GET All
         return anggotaService.findAll();
     }
 
